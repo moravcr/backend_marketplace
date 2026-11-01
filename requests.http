@@ -1,0 +1,131 @@
+# Мини-маркетплейс API: все запросы.
+# VS Code: расширение "REST Client" -> кнопка "Send Request" над запросом.
+# PyCharm / IntelliJ: встроенный HTTP Client (зелёный треугольник слева).
+# Сначала запусти сервер:  uvicorn main:app --reload
+
+@host = http://127.0.0.1:8000
+
+### 1. Проверка здоровья -> 200 {"status": "ok"}
+GET {{host}}/health
+
+### 2. Создать товар -> 201 и объект с id
+POST {{host}}/api/products
+Content-Type: application/json
+
+{
+  "name": "Wireless mouse",
+  "price": 1299.90,
+  "sku": "MOUSE-001",
+  "stock": 25
+}
+
+### 3. Создать ещё товары (для списка и пагинации)
+POST {{host}}/api/products
+Content-Type: application/json
+
+{
+  "name": "Wireless mouse",
+  "price": 1299.90,
+  "sku": "MOUSE-001",
+  "stock": 25
+}
+
+###
+POST {{host}}/api/products
+Content-Type: application/json
+
+{
+  "name": "Коврик для мыши",
+  "price": 399,
+  "sku": "PAD-001",
+  "stock": 100
+}
+
+### 4. Список товаров -> 200 и массив (всего записей в заголовке X-Total-Count)
+GET {{host}}/api/products
+
+### 5. Один товар -> 200
+GET {{host}}/api/products/1
+
+### 6. Неизвестный id -> 404 {"error": "Товар не найден"}
+GET {{host}}/api/products/999
+
+### 7. PUT: полная замена (нужны ВСЕ поля) -> 200
+PUT {{host}}/api/products/1
+Content-Type: application/json
+
+{
+  "name": "Беспроводная мышь Pro",
+  "price": 1599,
+  "sku": "MOUSE-001",
+  "stock": 25
+}
+
+### 8. PATCH: частичное обновление (только цена) -> 200
+PATCH {{host}}/api/products/1
+Content-Type: application/json
+
+{
+  "price": 1099
+}
+
+### 9. PUT без обязательного поля -> 400 {"error": "...", "field": "name"}
+PUT {{host}}/api/products/1
+Content-Type: application/json
+
+{
+  "price": 1599,
+  "sku": "MOUSE-001"
+}
+
+### 10. Удалить -> 204 (тела нет)
+DELETE {{host}}/api/products/3
+
+### 11. После удаления GET -> 404
+GET {{host}}/api/products/3
+
+### 12. Ошибки -> 400 (не 500 и не падение)
+### 12a. Сломанный JSON (пропущена закрывающая скобка)
+POST {{host}}/api/products
+Content-Type: application/json
+
+{"name": "Телефон", "price": 100
+
+### 12b. Пустое обязательное поле
+POST {{host}}/api/products
+Content-Type: application/json
+
+{"name": "   ", "price": 100, "sku": "X-1"}
+
+### 12c. Отрицательная цена
+POST {{host}}/api/products
+Content-Type: application/json
+
+{"name": "Телефон", "price": -5, "sku": "PHONE-1"}
+
+### 12d. Неверный тип (цена — строка)
+POST {{host}}/api/products
+Content-Type: application/json
+
+{"name": "Телефон", "price": "дорого", "sku": "PHONE-1"}
+
+### 12e. Дубликат sku -> 409 Conflict
+POST {{host}}/api/products
+Content-Type: application/json
+
+{"name": "Ещё одна мышь", "price": 500, "sku": "MOUSE-001"}
+
+### 13. Пагинация: 2 записи, пропустить 1
+GET {{host}}/api/products?limit=2&offset=1
+
+### 14. Фильтры
+GET {{host}}/api/products?name=мышь
+
+###
+GET {{host}}/api/products?sku=KEYB-001
+
+###
+GET {{host}}/api/products?max_price=1500
+
+### 15. Некорректная пагинация -> 400, field = limit
+GET {{host}}/api/products?limit=0
