@@ -1,0 +1,23 @@
+{
+  "text_field": "name",
+  "search": { "param": "q", "field": "name" },
+  "child": {
+    "resource": "orders",
+    "create": { "customer": "Ivanov", "quantity": 1 },
+    "parent_field": "product_id"
+  },
+  "rule": {
+    "description": "Нельзя заказать товар, если его не осталось на складе",
+    "parent": { "stock": 1 },
+    "setup": [
+      { "method": "POST", "path": "/api/products/{id}/orders", "body": { "customer": "Ivanov", "quantity": 1 } }
+    ],
+    "violate": {
+      "method": "POST",
+      "path": "/api/products/{id}/orders",
+      "body": { "customer": "Petrov", "quantity": 1 }
+    },
+    "expect_status": 409
+  },
+  "stats_path": "/api/products/stats"
+}

@@ -1,0 +1,187 @@
+# Мини-маркетплейс API, часть 2: все запросы.
+# VS Code: расширение "REST Client" -> кнопка "Send Request" над запросом.
+# PyCharm / IntelliJ: встроенный HTTP Client (зелёный треугольник слева).
+# Запросы можно также отправлять из Swagger: http://127.0.0.1:8000/docs
+# Порядок: cp .env.example .env -> alembic upgrade head -> python seed.py -> uvicorn main:app --reload
+# Номера товаров ниже соответствуют тестовым данным из seed.py:
+#   1 Wireless mouse (22 шт.), 2 Gaming mouse (12), 3 Mechanical keyboard (9), 4 Mouse pad (100), 5 USB cable (50)
+
+@host = http://127.0.0.1:8000
+
+### 1. Проверка здоровья -> 200
+GET {{host}}/health
+
+# ---------------------------------------------------------------------------
+# ТОВАРЫ
+# ---------------------------------------------------------------------------
+
+### 2. Список товаров (в заголовке X-Total-Count общее число)
+GET {{host}}/api/products
+
+### 3. Создать товар -> 201
+POST {{host}}/api/products
+Content-Type: application/json
+
+{"name": "Webcam", "price": 2500, "sku": "CAM-001", "stock": 7}
+
+### 4. Дубликат sku -> 409
+POST {{host}}/api/products
+Content-Type: application/json
+
+{"name": "Another webcam", "price": 2600, "sku": "CAM-001", "stock": 1}
+
+### 5. Строка с «вредным» SQL сохраняется как обычный текст -> 201, имя вернулось без изменений
+POST {{host}}/api/products
+Content-Type: application/json
+
+{"name": "'); DROP TABLE products;--", "price": 1, "sku": "EVIL-001", "stock": 1}
+
+### 6. Таблица products цела, а «вредная» строка находится как данные
+GET {{host}}/api/products?q=DROP
+
+### 7. Один товар -> 200, неизвестный -> 404
+GET {{host}}/api/products/1
+
+###
+GET {{host}}/api/products/999
+
+### 8. PUT: полная замена
+PUT {{host}}/api/products/5
+Content-Type: application/json
+
+{"name": "USB-C cable", "price": 249, "sku": "CABLE-001", "stock": 50}
+
+### 9. PATCH: только цена
+PATCH {{host}}/api/products/5
+Content-Type: application/json
+
+{"price": 229}
+
+# ---------------------------------------------------------------------------
+# ПОИСК, ФИЛЬТРЫ, СТРАНИЦЫ
+# ---------------------------------------------------------------------------
+
+### 10. Поиск по названию без учёта регистра (ищет база данных)
+GET {{host}}/api/products?q=mouse
+
+###
+GET {{host}}/api/products?q=MOUSE
+
+###
+GET {{host}}/api/products?q=pad
+
+### 11. Фильтры и пагинация
+GET {{host}}/api/products?sku=KEYB-001
+
+###
+GET {{host}}/api/products?max_price=1500
+
+###
+GET {{host}}/api/products?limit=2&offset=1
+
+### 12. Некорректный параметр -> 400, field = limit
+GET {{host}}/api/products?limit=0
+
+# ---------------------------------------------------------------------------
+# ОШИБКИ ВАЛИДАЦИИ -> 400
+# ---------------------------------------------------------------------------
+
+### 13. Пустое название
+POST {{host}}/api/products
+Content-Type: application/json
+
+{"name": "   ", "price": 100, "sku": "X-1"}
+
+### 14. Отрицательная цена
+POST {{host}}/api/products
+Content-Type: application/json
+
+{"name": "Phone", "price": -5, "sku": "PHONE-1"}
+
+### 15. Сломанный JSON (нет закрывающей скобки)
+POST {{host}}/api/products
+Content-Type: application/json
+
+{"name": "Phone", "price": 100
+
+# ---------------------------------------------------------------------------
+# ЗАКАЗЫ ТОВАРА: вложенный маршрут /api/products/{id}/orders
+# ---------------------------------------------------------------------------
+
+### 16. Список заказов товара 1 -> 200 (в seed.py у него уже 2 заказа)
+GET {{host}}/api/products/1/orders
+
+### 17. Создать заказ товара 1 -> 201, остаток уменьшится на 1 (было 22, станет 21)
+POST {{host}}/api/products/1/orders
+Content-Type: application/json
+
+{"customer": "Sidorov", "quantity": 1}
+
+### 18. Остаток после заказа: stock = 21
+GET {{host}}/api/products/1
+
+### 19. Заказы несуществующего товара -> 404
+GET {{host}}/api/products/999/orders
+
+###
+POST {{host}}/api/products/999/orders
+Content-Type: application/json
+
+{"customer": "Sidorov", "quantity": 1}
+
+### 20. Некорректное количество -> 400, field = quantity
+POST {{host}}/api/products/1/orders
+Content-Type: application/json
+
+{"customer": "Sidorov", "quantity": 0}
+
+### 21. Нет обязательного поля -> 400, field = customer
+POST {{host}}/api/products/1/orders
+Content-Type: application/json
+
+{"quantity": 1}
+
+# ---------------------------------------------------------------------------
+# ПРАВИЛО (409): нельзя заказать больше, чем есть на складе. Транзакция.
+# ---------------------------------------------------------------------------
+
+### 22. Заказываем ВЕСЬ остаток товара 3 (Mechanical keyboard, 9 шт.) -> 201
+POST {{host}}/api/products/3/orders
+Content-Type: application/json
+
+{"customer": "Ivanov", "quantity": 9}
+
+### 23. Остаток товара 3 стал 0
+GET {{host}}/api/products/3
+
+### 24. Ещё один заказ того же товара -> 409, текст объясняет причину
+POST {{host}}/api/products/3/orders
+Content-Type: application/json
+
+{"customer": "Petrov", "quantity": 1}
+
+### 25. После отказа остаток по-прежнему 0 (а не -1), заказ не создан
+GET {{host}}/api/products/3
+
+###
+GET {{host}}/api/products/3/orders
+
+# ---------------------------------------------------------------------------
+# СТАТИСТИКА (GROUP BY, COUNT, SUM, AVG считает база)
+# ---------------------------------------------------------------------------
+
+### 26. Статистика -> 200: totals и by_product
+GET {{host}}/api/products/stats
+
+# ---------------------------------------------------------------------------
+# УДАЛЕНИЕ
+# ---------------------------------------------------------------------------
+
+### 27. Нельзя удалить товар, на который есть заказы -> 409 (внешний ключ)
+DELETE {{host}}/api/products/1
+
+### 28. Товар без заказов удаляется -> 204
+DELETE {{host}}/api/products/4
+
+### 29. После удаления GET даёт 404
+GET {{host}}/api/products/4
